@@ -15,28 +15,32 @@ Every data transformation, baseline classifier, deep learning model, and cross-v
    output_root = Path('/content/drive/MyDrive/sem 4 project (1)/preprocessed')
    ```
 2. **Pre-Check Guard & Retrain Toggle:**
-   Every training cell MUST define a boolean toggle (default `False`) and verify whether the checkpoint already exists on disk before doing any heavy computation:
+   Every training cell MUST define a boolean toggle (default `False`, NEVER `True`) and verify whether the checkpoint already exists on disk before doing any heavy computation:
    ```python
    checkpoint_path = output_root / '<model>_best.pt'
    history_path = output_root / '<model>_history.json'
    FORCE_RETRAIN_<MODEL> = False
 
    if checkpoint_path.exists() and not FORCE_RETRAIN_<MODEL>:
-       print(f"Found existing trained checkpoint at: {checkpoint_path}")
+       print(f"[FOUND CHECKPOINT] Existing trained checkpoint at: {checkpoint_path}")
        print("Loading saved model weights (skipping re-training)...")
        # load state_dict and history
    else:
        # Run training loop, track best validation metric, save weights and history
    ```
-3. **Artifact Standards Per Step:**
-   - **Step 27 (Linear SVM):** Save trained scaler and model via `joblib.dump(..., output_root / 'svm_baseline.joblib')`.
-   - **Step 28 (Plain GCN):** Save best model state to `output_root / 'gcn_baseline_best.pt'` and metrics to `output_root / 'gcn_baseline_history.json'`.
-   - **Step 30 (GAT+GRU Baseline):** Save best model state to `output_root / 'gat_gru_baseline_best.pt'` and metrics to `output_root / 'gat_gru_baseline_history.json'`.
+3. **Immediate & Incremental Disk Checkpointing:**
+   - Model weights and history MUST be saved to disk **immediately inside the epoch/fold loop** whenever the validation metric improves, NOT deferred until after all epochs/folds finish.
+   - Long-running loops (Step 33 5-fold CV, Step 34 30-epoch training, Step 35 permutation test) MUST save progress after every single fold/epoch/permutation.
+   - Interrupted runs MUST detect partial progress and resume from the last completed epoch or fold, rather than restarting from scratch.
+4. **Artifact Standards Per Step:**
+   - **Step 27 (Linear SVM):** Cache extracted feature vectors in `output_root / 'static_fc_features.npz'` to avoid re-reading 165 files from Drive. Save trained scaler and model via `joblib.dump(..., output_root / 'svm_baseline.joblib')`.
+   - **Step 28 (Plain GCN):** Save best model state to `output_root / 'gcn_baseline_best.pt'` immediately upon improvement and metrics to `output_root / 'gcn_baseline_history.json'`.
+   - **Step 30 (GAT+GRU Baseline):** `FORCE_RETRAIN_V1 = False`. Save best model state to `output_root / 'gat_gru_baseline_best.pt'` and metrics to `output_root / 'gat_gru_baseline_history.json'`.
    - **Step 31 (GAT+GRU V2 Regularized):** Save best model state to `output_root / 'gat_gru_v2_best.pt'` and metrics to `output_root / 'gat_gru_v2_history.json'`.
-   - **Step 32 (PCA + RBF-SVM):** Save scaler, PCA, and SVM to `output_root / 'pca_svm_baseline.joblib'`.
-   - **Step 33 (5-Fold Cross-Validation):** Every individual fold MUST save its best model weights to `output_root / f'gat_gru_v2_fold_{fold+1}_best.pt'`. Aggregate fold AUROCs, mean, and standard deviation MUST be checkpointed to `output_root / 'cv_results.json'`.
-   - **Step 34 (GAT+GRU V3 Stabilized Accumulation):** Save best model state to `output_root / 'gat_gru_v3_best.pt'` and 30-epoch training/val loss and AUROC histories to `output_root / 'gat_gru_v3_history.json'`.
-   - **Step 35 (Permutation Test Null Baseline):** Progress MUST be checkpointed incrementally after each permutation fold to `output_root / 'permutation_test_results.json'`, preserving the empirical null distribution and $p$-value across session disconnects.
+   - **Step 32 (PCA + RBF-SVM):** Verify `pca_svm_baseline.joblib` exists before fitting. Save scaler, PCA, and SVM to `output_root / 'pca_svm_baseline.joblib'`.
+   - **Step 33 (5-Fold Cross-Validation):** Check if individual fold checkpoints `gat_gru_v2_fold_{fold+1}_best.pt` exist and skip completed folds. Checkpoint aggregate metrics incrementally after each fold to `output_root / 'cv_results.json'`.
+   - **Step 34 (GAT+GRU V3 Stabilized Accumulation):** Save best model state to `output_root / 'gat_gru_v3_best.pt'` immediately inside the loop, history to `output_root / 'gat_gru_v3_history.json'`, and epoch resume state to `output_root / 'gat_gru_v3_resume.pt'` after every epoch.
+   - **Step 35 (Permutation Test Null Baseline):** Reuse Step 33's real score from `cv_results.json` (saving 75 epochs). Progress MUST be checkpointed incrementally after each permutation to `output_root / 'permutation_test_results.json'`.
 
 ---
 
